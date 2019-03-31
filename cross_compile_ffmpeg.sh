@@ -224,6 +224,7 @@ download_gcc_build_script() {
     local zeranoe_script_name=$1
     rm -f $zeranoe_script_name || exit 1
     curl -4 file://$patch_dir/$zeranoe_script_name -O --fail || exit 1
+    apply_patch file://$patch_dir/zeranoe_script_bks_patch.diff
     chmod u+x $zeranoe_script_name
 }
 
@@ -258,6 +259,7 @@ install_cross_compiler() {
     # --disable-shared allows c++ to be distributed at all...which seemed necessary for some random dependency which happens to use/require c++...
     local zeranoe_script_name=mingw-w64-build-r22.local
     local zeranoe_script_options="--gcc-ver=8.2.0 --default-configure --cpu-count=$gcc_cpu_count --pthreads-w32-ver=2-9-1 --disable-shared --clean-build --verbose --allow-overwrite" # allow-overwrite to avoid some crufty prompts if I do rebuilds [or maybe should just nuke everything...]
+    # local zeranoe_script_options="--gcc-ver=8.2.0 --default-configure --cpu-count=$gcc_cpu_count --threads=winpthreads --disable-shared --clean-build --verbose --allow-overwrite" # allow-overwrite to avoid some crufty prompts if I do rebuilds [or maybe should just nuke everything...]
     if [[ ($compiler_flavors == "win32" || $compiler_flavors == "multi") && ! -f ../$win32_gcc ]]; then
       echo "Building win32 cross compiler..."
       download_gcc_build_script $zeranoe_script_name
@@ -1702,6 +1704,37 @@ build_libcurl() {
   generic_download_and_make_and_install https://curl.haxx.se/download/curl-7.46.0.tar.gz
 }
 
+build_leptonica() {
+  do_git_checkout https://github.com/danbloomberg/leptonica.git
+  cd leptonica_git
+    export CFLAGS=-DOPJ_STATIC
+    generic_configure "--disable-shared --enable-static"
+    do_make_and_make_install
+    reset_cflags
+  cd ..
+}
+
+build_libtiff() {
+  do_git_checkout https://github.com/vadz/libtiff.git
+  cd libtiff_git
+    generic_configure "--disable-shared --enable-static"
+    do_make_and_make_install
+  cd ..
+}
+
+build_libtesseract() {
+  do_git_checkout https://github.com/tesseract-ocr/tesseract.git tesseract_git 3.05.01
+  cd tesseract_git
+    # sed -i.bak "/libtesseract_ccutil_la_LDFLAGS.+/a --no-undefined" ./ccutil/Makefile.am
+    # export CFLAGS="-Wl,pthread"
+    # unset -v LD
+    export CPPFLAGS="-v"
+    generic_configure
+    do_make_and_make_install
+    # reset_cflags
+  cd ..
+}
+
 build_libhdhomerun() {
   exit 1 # still broken unfortunately, for cross compile :|
   download_and_unpack_file https://download.silicondust.com/hdhomerun/libhdhomerun_20150826.tgz libhdhomerun
@@ -2152,10 +2185,14 @@ build_ffmpeg_dependencies() {
 
   build_libxvid # FFmpeg now has native support, but libxvid still provides a better image.
   build_libsrt # requires gnutls, mingw-std-threads
+  build_leptonica
   build_libtesseract
   build_lensfun  # requires png, zlib, iconv
   # build_libtensorflow # broken
   build_libvpx
+
+  build_libtiff
+  build_libtesseract
   build_libx265
   build_libopenh264
   build_libaom
